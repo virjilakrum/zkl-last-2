@@ -15,9 +15,15 @@ import {
   clusterApiUrl,
   PublicKey,
   SystemProgram,
-  Transaction,
+  LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
-import { Program, AnchorProvider, web3 } from "@project-serum/anchor";
+import {
+  Program,
+  AnchorProvider,
+  web3,
+  utils,
+  BN,
+} from "@project-serum/anchor";
 import { create } from "ipfs-http-client";
 import idl from "./idl.json";
 
@@ -47,8 +53,24 @@ function AppContent() {
       });
       const program = new Program(idl, programID, provider);
       setProgram(program);
+      checkIfAccountExists();
     }
   }, [wallet, connection]);
+
+  const checkIfAccountExists = async () => {
+    if (!program || !wallet) return;
+    try {
+      const [userAccountPda] = await PublicKey.findProgramAddress(
+        [Buffer.from("user_account"), wallet.publicKey.toBuffer()],
+        program.programId
+      );
+      const account = await program.account.userAccount.fetch(userAccountPda);
+      setUserAccount(userAccountPda);
+      console.log("User account exists:", userAccountPda.toString());
+    } catch (error) {
+      console.log("User account does not exist yet");
+    }
+  };
 
   const createUserAccount = async () => {
     if (!program || !wallet) return;
@@ -82,7 +104,7 @@ function AppContent() {
       try {
         const buffer = await selectedFile.arrayBuffer();
         const added = await ipfs.add(buffer);
-        const hash = added.cid.toString();
+        const hash = added.path;
         setFileHash(hash);
         console.log("File uploaded to IPFS with hash:", hash);
       } catch (error) {
@@ -216,19 +238,20 @@ function AppContent() {
     <div>
       <h1>ZKL-Last-2</h1>
       <WalletMultiButton />
-      {wallet && !userType && (
+      {wallet && wallet.publicKey && !userType && (
         <div>
           <h2>Select User Type:</h2>
           <button onClick={() => setUserType("sender")}>File Sender</button>
           <button onClick={() => setUserType("receiver")}>File Receiver</button>
         </div>
       )}
-      {wallet && userType && (
+      {wallet && wallet.publicKey && userType && (
         <>
           <h2>You are a: {userType}</h2>
           <button onClick={createUserAccount} disabled={userAccount}>
             {userAccount ? "User Account Created" : "Create User Account"}
           </button>
+          {userAccount && <p>User Account: {userAccount.toString()}</p>}
           {userType === "sender" && (
             <>
               <input
