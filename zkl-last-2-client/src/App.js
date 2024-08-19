@@ -11,8 +11,13 @@ import {
   WalletModalProvider,
   WalletMultiButton,
 } from "@solana/wallet-adapter-react-ui";
-import { clusterApiUrl, PublicKey, SystemProgram } from "@solana/web3.js";
-import { Program, AnchorProvider } from "@project-serum/anchor";
+import {
+  clusterApiUrl,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+} from "@solana/web3.js";
+import { Program, AnchorProvider, web3 } from "@project-serum/anchor";
 import { create } from "ipfs-http-client";
 import idl from "./idl.json";
 
@@ -25,7 +30,7 @@ function AppContent() {
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
 
-  const [userType, setUserType] = useState(null); // "sender" or "receiver"
+  const [userType, setUserType] = useState(null);
   const [file, setFile] = useState(null);
   const [recipient, setRecipient] = useState("");
   const [fileHash, setFileHash] = useState("");
@@ -44,6 +49,30 @@ function AppContent() {
       setProgram(program);
     }
   }, [wallet, connection]);
+
+  const createUserAccount = async () => {
+    if (!program || !wallet) return;
+    try {
+      const [userAccountPda] = await PublicKey.findProgramAddress(
+        [Buffer.from("user_account"), wallet.publicKey.toBuffer()],
+        program.programId
+      );
+
+      await program.methods
+        .createUserAccount()
+        .accounts({
+          userAccount: userAccountPda,
+          user: wallet.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      setUserAccount(userAccountPda);
+      console.log("User account created:", userAccountPda.toString());
+    } catch (error) {
+      console.error("Error creating user account:", error);
+    }
+  };
 
   const handleFileChange = async (event) => {
     const selectedFile = event.target.files[0];
@@ -71,32 +100,8 @@ function AppContent() {
     setRecipient(event.target.value);
   };
 
-  const createUserAccount = async () => {
-    if (!program || !wallet.publicKey) return;
-    try {
-      const [userAccountPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("user_account"), wallet.publicKey.toBuffer()],
-        program.programId
-      );
-
-      await program.methods
-        .createUserAccount()
-        .accounts({
-          userAccount: userAccountPda,
-          user: wallet.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
-
-      setUserAccount(userAccountPda);
-      console.log("User account created:", userAccountPda.toString());
-    } catch (error) {
-      console.error("Error creating user account:", error);
-    }
-  };
-
   const encryptHash = async () => {
-    if (!program || !wallet.publicKey || !fileHash) {
+    if (!program || !wallet || !fileHash) {
       alert("Please upload a file and connect your wallet first.");
       return;
     }
@@ -108,28 +113,26 @@ function AppContent() {
         })
         .rpc();
 
-      // Fetch the transaction details to get the return value
       const txDetails = await connection.getTransaction(tx, {
         commitment: "confirmed",
       });
-      const returnData = txDetails.meta.returnData;
-      const encryptedHash = returnData.data.toString();
-
-      setEncryptedHash(encryptedHash);
-      console.log("Encrypted hash:", encryptedHash);
+      if (txDetails?.meta?.returnData) {
+        const encodedHash = txDetails.meta.returnData.data;
+        const encryptedHash = new TextDecoder().decode(
+          Buffer.from(encodedHash)
+        );
+        setEncryptedHash(encryptedHash);
+        console.log("Encrypted hash:", encryptedHash);
+      } else {
+        console.error("No return data found in transaction");
+      }
     } catch (error) {
       console.error("Error encrypting file hash:", error);
     }
   };
 
   const sendEncryptedHash = async () => {
-    if (
-      !program ||
-      !wallet.publicKey ||
-      !encryptedHash ||
-      !recipient ||
-      !userAccount
-    ) {
+    if (!program || !wallet || !encryptedHash || !recipient || !userAccount) {
       alert(
         "Please encrypt the hash, enter a recipient, and create a user account before sending."
       );
@@ -137,7 +140,7 @@ function AppContent() {
     }
     try {
       const recipientPubkey = new PublicKey(recipient);
-      const [recipientAccountPda] = PublicKey.findProgramAddressSync(
+      const [recipientAccountPda] = await PublicKey.findProgramAddress(
         [Buffer.from("user_account"), recipientPubkey.toBuffer()],
         program.programId
       );
@@ -156,7 +159,7 @@ function AppContent() {
   };
 
   const fetchReceivedHash = async () => {
-    if (!program || !wallet.publicKey || !userAccount) {
+    if (!program || !wallet || !userAccount) {
       alert("Please create a user account first.");
       return;
     }
@@ -179,12 +182,7 @@ function AppContent() {
   };
 
   const verifyAndDecryptHash = async () => {
-    if (
-      !program ||
-      !wallet.publicKey ||
-      !receivedEncryptedHash ||
-      !userAccount
-    ) {
+    if (!program || !wallet || !receivedEncryptedHash || !userAccount) {
       alert("Please fetch the received encrypted hash first.");
       return;
     }
@@ -196,16 +194,19 @@ function AppContent() {
         })
         .rpc();
 
-      // Fetch the transaction details to get the return value
       const txDetails = await connection.getTransaction(tx, {
         commitment: "confirmed",
       });
-      const returnData = txDetails.meta.returnData;
-      const decryptedHash = returnData.data.toString();
-
-      console.log("Decrypted hash:", decryptedHash);
-      // Here you can add logic to fetch the file from IPFS using the decrypted hash
-      alert(`File can be fetched from IPFS with hash: ${decryptedHash}`);
+      if (txDetails?.meta?.returnData) {
+        const encodedHash = txDetails.meta.returnData.data;
+        const decryptedHash = new TextDecoder().decode(
+          Buffer.from(encodedHash)
+        );
+        console.log("Decrypted hash:", decryptedHash);
+        alert(`File can be fetched from IPFS with hash: ${decryptedHash}`);
+      } else {
+        console.error("No return data found in transaction");
+      }
     } catch (error) {
       console.error("Error verifying and decrypting hash:", error);
     }
@@ -215,14 +216,14 @@ function AppContent() {
     <div>
       <h1>ZKL-Last-2</h1>
       <WalletMultiButton />
-      {wallet && wallet.publicKey && !userType && (
+      {wallet && !userType && (
         <div>
           <h2>Select User Type:</h2>
           <button onClick={() => setUserType("sender")}>File Sender</button>
           <button onClick={() => setUserType("receiver")}>File Receiver</button>
         </div>
       )}
-      {wallet && wallet.publicKey && userType && (
+      {wallet && userType && (
         <>
           <h2>You are a: {userType}</h2>
           <button onClick={createUserAccount} disabled={userAccount}>
@@ -280,7 +281,7 @@ function AppContent() {
   );
 }
 
-export default function App() {
+function App() {
   const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => clusterApiUrl(network), [network]);
 
@@ -296,3 +297,5 @@ export default function App() {
     </ConnectionProvider>
   );
 }
+
+export default App;
