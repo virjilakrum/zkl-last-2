@@ -1,12 +1,27 @@
-import React, { useState, useEffect } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { Connection, PublicKey } from "@solana/web3.js";
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  ConnectionProvider,
+  WalletProvider,
+  useWallet,
+} from "@solana/wallet-adapter-react";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+import {
+  WalletModalProvider,
+  WalletMultiButton,
+} from "@solana/wallet-adapter-react-ui";
+import {
+  clusterApiUrl,
+  Connection,
+  PublicKey,
+  SystemProgram,
+} from "@solana/web3.js";
 import { Program, AnchorProvider } from "@project-serum/anchor";
 import { create } from "ipfs-http-client";
 import signWithMAC from "./macSigning";
 import idl from "./idl.json";
-import { SystemProgram } from "@solana/web3.js";
+
+require("@solana/wallet-adapter-react-ui/styles.css");
 
 const ipfs = create({ host: "ipfs.infura.io", port: 5001, protocol: "https" });
 const programID = new PublicKey("DAPVX77x4nA6AoqZpMLeYzfaYZCrBkDyoQuatmn6yn1c");
@@ -14,7 +29,7 @@ const opts = {
   preflightCommitment: "processed",
 };
 
-const App = () => {
+function AppContent() {
   const wallet = useWallet();
   const [file, setFile] = useState(null);
   const [recipient, setRecipient] = useState("");
@@ -32,75 +47,7 @@ const App = () => {
     setProgram(program);
   }, [wallet]);
 
-  const handleFileChange = (event) => {
-    setFile(event.target.files[0]);
-  };
-
-  const handleRecipientChange = (event) => {
-    setRecipient(event.target.value);
-  };
-
-  const uploadToIPFS = async (file) => {
-    const added = await ipfs.add(file);
-    return added.path;
-  };
-
-  const createUserAccount = async () => {
-    if (!program || !wallet.publicKey) return;
-    try {
-      await program.rpc.createUserAccount({
-        accounts: {
-          userAccount: wallet.publicKey,
-          user: wallet.publicKey,
-          systemProgram: SystemProgram.programId,
-        },
-      });
-      console.log("User account created");
-    } catch (error) {
-      console.error("Error creating user account:", error);
-    }
-  };
-
-  const sendFileHash = async () => {
-    if (!program || !wallet.publicKey || !recipient) return;
-    try {
-      const recipientPubkey = new PublicKey(recipient);
-      await program.rpc.sendFileHash(fileHash, signedHash, {
-        accounts: {
-          sender: wallet.publicKey,
-          recipient: recipientPubkey,
-        },
-      });
-      console.log("File hash sent");
-    } catch (error) {
-      console.error("Error sending file hash:", error);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!file || !recipient || !wallet.publicKey) {
-      alert(
-        "Please connect your wallet, select a file, and enter a recipient."
-      );
-      return;
-    }
-
-    try {
-      const hash = await uploadToIPFS(file);
-      setFileHash(hash);
-
-      const key = wallet.publicKey.toBase58();
-      const signed = signWithMAC(hash, key);
-      setSignedHash(signed);
-
-      await sendFileHash();
-
-      console.log("File uploaded to IPFS with hash:", hash);
-      console.log("Signed hash:", signed);
-    } catch (error) {
-      console.error("Error processing file:", error);
-    }
-  };
+  // ... rest of your component logic (handleFileChange, handleRecipientChange, uploadToIPFS, createUserAccount, sendFileHash, handleSubmit)
 
   return (
     <div>
@@ -123,6 +70,21 @@ const App = () => {
       )}
     </div>
   );
-};
+}
 
-export default App;
+export default function App() {
+  const network = WalletAdapterNetwork.Devnet;
+  const endpoint = useMemo(() => clusterApiUrl(network), [network]);
+
+  const wallets = useMemo(() => [new PhantomWalletAdapter()], [network]);
+
+  return (
+    <ConnectionProvider endpoint={endpoint}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>
+          <AppContent />
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
+  );
+}
