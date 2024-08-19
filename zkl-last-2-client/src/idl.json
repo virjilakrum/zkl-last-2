@@ -13,7 +13,7 @@
         {
           "name": "userAccount",
           "isMut": true,
-          "isSigner": true
+          "isSigner": false
         },
         {
           "name": "user",
@@ -29,7 +29,7 @@
       "args": []
     },
     {
-      "name": "sendFileHash",
+      "name": "sendEncryptedHash",
       "accounts": [
         {
           "name": "sender",
@@ -44,17 +44,13 @@
       ],
       "args": [
         {
-          "name": "fileHash",
-          "type": "string"
-        },
-        {
-          "name": "signedHash",
+          "name": "encryptedHash",
           "type": "string"
         }
       ]
     },
     {
-      "name": "verifyFileHash",
+      "name": "verifyAndDecryptHash",
       "accounts": [
         {
           "name": "recipient",
@@ -64,10 +60,28 @@
       ],
       "args": [
         {
-          "name": "fileHash",
+          "name": "encryptedHash",
           "type": "string"
         }
-      ]
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "encryptHash",
+      "accounts": [
+        {
+          "name": "sender",
+          "isMut": true,
+          "isSigner": true
+        }
+      ],
+      "args": [
+        {
+          "name": "hash",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
     }
   ],
   "accounts": [
@@ -99,11 +113,7 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "hash",
-            "type": "string"
-          },
-          {
-            "name": "signedHash",
+            "name": "encryptedHash",
             "type": "string"
           },
           {
