@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha256;
 
 declare_id!("DAPVX77x4nA6AoqZpMLeYzfaYZCrBkDyoQuatmn6yn1c");
@@ -68,7 +68,7 @@ pub struct Initialize {}
 
 #[derive(Accounts)]
 pub struct CreateUserAccount<'info> {
-    #[account(init, payer = user, space = 8 + 32 + 1000)]
+    #[account(init, payer = user, space = 8 + 32 + 1000, seeds = [b"user_account", user.key().as_ref()], bump)]
     pub user_account: Account<'info, UserAccount>,
     #[account(mut)]
     pub user: Signer<'info>,
@@ -118,6 +118,5 @@ fn encrypt_hash(hash: &str, key: &[u8]) -> String {
 fn decrypt_hash(encrypted_hash: &str, key: &[u8]) -> String {
     // In a full-version, this would be a proper decryption. 🏗️
     // For this example, we're just returning the encrypted hash as is. 🏗️
-
     encrypted_hash.to_string()
 }
