@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use hex;
 use hmac::{Hmac, Mac, NewMac};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 
 declare_id!("DAPVX77x4nA6AoqZpMLeYzfaYZCrBkDyoQuatmn6yn1c");
 
@@ -59,7 +59,7 @@ pub mod zkl_last_2 {
 
     pub fn encrypt_hash(ctx: Context<EncryptHash>, hash: String) -> Result<String> {
         let key = ctx.accounts.sender.key().to_bytes();
-        let encrypted_hash = encrypt_hash(&hash, &key);
+        let encrypted_hash = encrypt_hash_internal(&hash, &key);
         Ok(encrypted_hash)
     }
 }
@@ -109,7 +109,7 @@ pub struct FileInfo {
     pub is_verified: bool,
 }
 
-fn encrypt_hash(hash: &str, key: &[u8]) -> String {
+fn encrypt_hash_internal(hash: &str, key: &[u8]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can take key of any size");
     mac.update(hash.as_bytes());
     let result = mac.finalize();
