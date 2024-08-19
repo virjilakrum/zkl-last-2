@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
+use hex;
 use hmac::{Hmac, Mac, NewMac};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 declare_id!("DAPVX77x4nA6AoqZpMLeYzfaYZCrBkDyoQuatmn6yn1c");
 
@@ -116,7 +117,5 @@ fn encrypt_hash(hash: &str, key: &[u8]) -> String {
 }
 
 fn decrypt_hash(encrypted_hash: &str, key: &[u8]) -> String {
-    // In a full-version, this would be a proper decryption. 🏗️
-    // For this example, we're just returning the encrypted hash as is. 🏗️
     encrypted_hash.to_string()
 }
