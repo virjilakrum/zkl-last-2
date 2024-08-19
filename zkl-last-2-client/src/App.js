@@ -53,10 +53,15 @@ function AppContent() {
       setFile(selectedFile);
       setIsUploading(true);
       try {
-        const added = await ipfs.add(selectedFile);
-        const hash = added.path;
-        setFileHash(hash);
-        console.log("File uploaded to IPFS with hash:", hash);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const buffer = Buffer.from(reader.result);
+          const added = await ipfs.add(buffer);
+          const hash = added.cid.toString();
+          setFileHash(hash);
+          console.log("File uploaded to IPFS with hash:", hash);
+        };
+        reader.readAsArrayBuffer(selectedFile);
       } catch (error) {
         console.error("Error uploading file to IPFS:", error);
         alert(
@@ -141,7 +146,6 @@ function AppContent() {
         })
         .rpc();
       console.log("Decrypted hash:", decryptedHash);
-      // Here you would use this hash to fetch the file from IPFS
     } catch (error) {
       console.error("Error verifying and decrypting hash:", error);
     }
