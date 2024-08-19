@@ -18,14 +18,11 @@ import {
 } from "@solana/web3.js";
 import { Program, AnchorProvider } from "@project-serum/anchor";
 import { create } from "ipfs-http-client";
-import signWithMAC from "./macSigning";
 import idl from "./idl.json";
 
 require("@solana/wallet-adapter-react-ui/styles.css");
 
-// IPFS configuration for local node
 const ipfs = create({ host: "localhost", port: "5001", protocol: "http" });
-
 const programID = new PublicKey("DAPVX77x4nA6AoqZpMLeYzfaYZCrBkDyoQuatmn6yn1c");
 const opts = {
   preflightCommitment: "processed",
@@ -36,7 +33,7 @@ function AppContent() {
   const [file, setFile] = useState(null);
   const [recipient, setRecipient] = useState("");
   const [fileHash, setFileHash] = useState("");
-  const [signedHash, setSignedHash] = useState("");
+  const [encryptedHash, setEncryptedHash] = useState("");
   const [program, setProgram] = useState();
   const [isUploading, setIsUploading] = useState(false);
 
@@ -49,22 +46,6 @@ function AppContent() {
     const program = new Program(idl, programID, provider);
     setProgram(program);
   }, [wallet]);
-
-  useEffect(() => {
-    if (wallet.connected && wallet.publicKey) {
-      const message = "Please sign this message to confirm your identity";
-      const encodedMessage = new TextEncoder().encode(message);
-      wallet.signMessage(encodedMessage).then(
-        (signature) => {
-          console.log("Signature:", signature);
-          // Burada imzayı doğrulama veya kaydetme işlemleri yapılabilir
-        },
-        (error) => {
-          console.error("Error signing message:", error);
-        }
-      );
-    }
-  }, [wallet.connected, wallet.publicKey]);
 
   const handleFileChange = async (event) => {
     const selectedFile = event.target.files[0];
@@ -108,54 +89,61 @@ function AppContent() {
     }
   };
 
-  const handleMACSign = async () => {
-    if (!fileHash || !wallet.publicKey) {
+  const encryptHash = async () => {
+    if (!program || !wallet.publicKey || !fileHash) {
       alert("Please upload a file and connect your wallet first.");
       return;
     }
     try {
-      const signedHash = await program.methods
-        .signFileHash(fileHash)
+      const encryptedHash = await program.methods
+        .encryptHash(fileHash)
         .accounts({
-          signer: wallet.publicKey,
+          sender: wallet.publicKey,
         })
         .rpc();
-      setSignedHash(signedHash);
-      console.log("Signed hash:", signedHash);
+      setEncryptedHash(encryptedHash);
+      console.log("Encrypted hash:", encryptedHash);
     } catch (error) {
-      console.error("Error signing file hash:", error);
+      console.error("Error encrypting file hash:", error);
     }
   };
 
-  const handleSubmit = async () => {
-    if (!fileHash || !signedHash || !recipient || !wallet.publicKey) {
-      alert(
-        "Please connect your wallet, upload a file, sign the hash, and enter a recipient."
-      );
+  const sendEncryptedHash = async () => {
+    if (!program || !wallet.publicKey || !encryptedHash || !recipient) {
+      alert("Please encrypt the hash and enter a recipient before sending.");
       return;
     }
-
-    try {
-      await sendFileHash(fileHash, signedHash);
-    } catch (error) {
-      console.error("Error sending file hash:", error);
-    }
-  };
-
-  const sendFileHash = async (hash, signed) => {
-    if (!program || !wallet.publicKey || !recipient) return;
     try {
       const recipientPubkey = new PublicKey(recipient);
       await program.methods
-        .sendFileHash(hash, signed)
+        .sendEncryptedHash(encryptedHash)
         .accounts({
           sender: wallet.publicKey,
           recipient: recipientPubkey,
         })
         .rpc();
-      console.log("File hash sent");
+      console.log("Encrypted hash sent");
     } catch (error) {
-      console.error("Error sending file hash:", error);
+      console.error("Error sending encrypted hash:", error);
+    }
+  };
+
+  const verifyAndDecryptHash = async () => {
+    if (!program || !wallet.publicKey || !encryptedHash) {
+      alert("Please receive an encrypted hash first.");
+      return;
+    }
+    try {
+      const decryptedHash = await program.methods
+        .verifyAndDecryptHash(encryptedHash)
+        .accounts({
+          recipient: wallet.publicKey,
+        })
+        .rpc();
+      console.log("Decrypted hash:", decryptedHash);
+      // Here you would use this hash to fetch the file from IPFS
+    } catch (error) {
+      console.error("Error verifying and decrypting hash:", error);
     }
   };
 
@@ -172,9 +160,11 @@ function AppContent() {
             disabled={isUploading}
           />
           {isUploading && <p>Uploading file to IPFS...</p>}
-          <button onClick={handleMACSign} disabled={!fileHash}>
-            Sign File Hash with MAC
+          {fileHash && <p>File hash: {fileHash}</p>}
+          <button onClick={encryptHash} disabled={!fileHash}>
+            Encrypt Hash
           </button>
+          {encryptedHash && <p>Encrypted hash: {encryptedHash}</p>}
           <input
             type="text"
             placeholder="Recipient's public key"
@@ -182,13 +172,14 @@ function AppContent() {
             onChange={handleRecipientChange}
           />
           <button
-            onClick={handleSubmit}
-            disabled={!fileHash || !signedHash || !recipient}
+            onClick={sendEncryptedHash}
+            disabled={!encryptedHash || !recipient}
           >
-            Send File Hash
+            Send Encrypted Hash
           </button>
-          {fileHash && <p>File hash: {fileHash}</p>}
-          {signedHash && <p>Signed hash: {signedHash}</p>}
+          <button onClick={verifyAndDecryptHash} disabled={!encryptedHash}>
+            Verify and Decrypt Hash
+          </button>
         </>
       )}
     </div>
@@ -203,11 +194,7 @@ export default function App() {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider
-        wallets={wallets}
-        autoConnect
-        onError={(error) => console.log(error)}
-      >
+      <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <AppContent />
         </WalletModalProvider>

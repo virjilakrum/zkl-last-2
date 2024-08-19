@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 
 declare_id!("DAPVX77x4nA6AoqZpMLeYzfaYZCrBkDyoQuatmn6yn1c");
 
@@ -19,17 +19,15 @@ pub mod zkl_last_2 {
         Ok(())
     }
 
-    pub fn send_file_hash(
-        ctx: Context<SendFileHash>,
-        file_hash: String,
-        signed_hash: String,
+    pub fn send_encrypted_hash(
+        ctx: Context<SendEncryptedHash>,
+        encrypted_hash: String,
     ) -> Result<()> {
         let sender = &ctx.accounts.sender;
         let recipient = &mut ctx.accounts.recipient;
 
         let file_info = FileInfo {
-            hash: file_hash,
-            signed_hash,
+            encrypted_hash,
             sender: *sender.key,
             is_verified: false,
         };
@@ -38,34 +36,30 @@ pub mod zkl_last_2 {
         Ok(())
     }
 
-    pub fn verify_file_hash(ctx: Context<VerifyFileHash>, file_hash: String) -> Result<()> {
+    pub fn verify_and_decrypt_hash(
+        ctx: Context<VerifyAndDecryptHash>,
+        encrypted_hash: String,
+    ) -> Result<String> {
         let recipient = &mut ctx.accounts.recipient;
 
         if let Some(file_info) = recipient
             .received_files
             .iter_mut()
-            .find(|f| f.hash == file_hash)
+            .find(|f| f.encrypted_hash == encrypted_hash)
         {
-            // Verify the MAC
-            let key = ctx.accounts.signer.key().to_bytes();
-            let verified = verify_mac(&file_info.hash, &file_info.signed_hash, &key);
-            file_info.is_verified = verified;
-
-            if verified {
-                msg!("File hash verified successfully");
-                Ok(())
-            } else {
-                Err(ProgramError::InvalidSignature.into())
-            }
+            let key = ctx.accounts.recipient.key().to_bytes();
+            let decrypted_hash = decrypt_hash(&encrypted_hash, &key);
+            file_info.is_verified = true;
+            Ok(decrypted_hash)
         } else {
             Err(ProgramError::InvalidAccountData.into())
         }
     }
 
-    pub fn sign_file_hash(ctx: Context<SignFileHash>, file_hash: String) -> Result<String> {
-        let key = ctx.accounts.signer.key().to_bytes();
-        let signed_hash = compute_mac(&file_hash, &key);
-        Ok(signed_hash)
+    pub fn encrypt_hash(ctx: Context<EncryptHash>, hash: String) -> Result<String> {
+        let key = ctx.accounts.sender.key().to_bytes();
+        let encrypted_hash = encrypt_hash(&hash, &key);
+        Ok(encrypted_hash)
     }
 }
 
@@ -74,7 +68,7 @@ pub struct Initialize {}
 
 #[derive(Accounts)]
 pub struct CreateUserAccount<'info> {
-    #[account(init, payer = user, space = 8 + 32 + 1000)] // Increased space for more files
+    #[account(init, payer = user, space = 8 + 32 + 1000)]
     pub user_account: Account<'info, UserAccount>,
     #[account(mut)]
     pub user: Signer<'info>,
@@ -82,7 +76,7 @@ pub struct CreateUserAccount<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SendFileHash<'info> {
+pub struct SendEncryptedHash<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
     #[account(mut)]
@@ -90,16 +84,15 @@ pub struct SendFileHash<'info> {
 }
 
 #[derive(Accounts)]
-pub struct VerifyFileHash<'info> {
+pub struct VerifyAndDecryptHash<'info> {
     #[account(mut)]
     pub recipient: Account<'info, UserAccount>,
-    pub signer: Signer<'info>,
 }
 
 #[derive(Accounts)]
-pub struct SignFileHash<'info> {
+pub struct EncryptHash<'info> {
     #[account(mut)]
-    pub signer: Signer<'info>,
+    pub sender: Signer<'info>,
 }
 
 #[account]
@@ -110,25 +103,21 @@ pub struct UserAccount {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct FileInfo {
-    pub hash: String,
-    pub signed_hash: String,
+    pub encrypted_hash: String,
     pub sender: Pubkey,
     pub is_verified: bool,
 }
 
-// Helper function to compute MAC
-fn compute_mac(message: &str, key: &[u8]) -> String {
+fn encrypt_hash(hash: &str, key: &[u8]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can take key of any size");
-    mac.update(message.as_bytes());
+    mac.update(hash.as_bytes());
     let result = mac.finalize();
     hex::encode(result.into_bytes())
 }
 
-// Helper function to verify MAC
-fn verify_mac(message: &str, signed_hash: &str, key: &[u8]) -> bool {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can take key of any size");
-    mac.update(message.as_bytes());
+fn decrypt_hash(encrypted_hash: &str, key: &[u8]) -> String {
+    // In a full-version, this would be a proper decryption. 🏗️
+    // For this example, we're just returning the encrypted hash as is. 🏗️
 
-    let decoded_signed_hash = hex::decode(signed_hash).expect("Decoding failed");
-    mac.verify_slice(&decoded_signed_hash).is_ok()
+    encrypted_hash.to_string()
 }
