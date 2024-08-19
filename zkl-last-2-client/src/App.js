@@ -47,7 +47,73 @@ function AppContent() {
     setProgram(program);
   }, [wallet]);
 
-  // ... rest of your component logic (handleFileChange, handleRecipientChange, uploadToIPFS, createUserAccount, sendFileHash, handleSubmit)
+  const handleFileChange = (event) => {
+    setFile(event.target.files[0]);
+  };
+
+  const handleRecipientChange = (event) => {
+    setRecipient(event.target.value);
+  };
+
+  const createUserAccount = async () => {
+    if (!program || !wallet.publicKey) return;
+    try {
+      await program.methods
+        .createUserAccount()
+        .accounts({
+          userAccount: wallet.publicKey,
+          user: wallet.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+      console.log("User account created");
+    } catch (error) {
+      console.error("Error creating user account:", error);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!file || !recipient || !wallet.publicKey) {
+      alert(
+        "Please connect your wallet, select a file, and enter a recipient."
+      );
+      return;
+    }
+
+    try {
+      const added = await ipfs.add(file);
+      const hash = added.path;
+      setFileHash(hash);
+
+      const key = wallet.publicKey.toBase58();
+      const signed = signWithMAC(hash, key);
+      setSignedHash(signed);
+
+      await sendFileHash(hash, signed);
+
+      console.log("File uploaded to IPFS with hash:", hash);
+      console.log("Signed hash:", signed);
+    } catch (error) {
+      console.error("Error processing file:", error);
+    }
+  };
+
+  const sendFileHash = async (hash, signed) => {
+    if (!program || !wallet.publicKey || !recipient) return;
+    try {
+      const recipientPubkey = new PublicKey(recipient);
+      await program.methods
+        .sendFileHash(hash, signed)
+        .accounts({
+          sender: wallet.publicKey,
+          recipient: recipientPubkey,
+        })
+        .rpc();
+      console.log("File hash sent");
+    } catch (error) {
+      console.error("Error sending file hash:", error);
+    }
+  };
 
   return (
     <div>
