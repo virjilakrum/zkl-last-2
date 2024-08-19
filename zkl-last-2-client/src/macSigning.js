@@ -8,4 +8,9 @@ const signWithMAC = (message, key) => {
   return Buffer.from(signature).toString("hex");
 };
 
+export const verifyMAC = (message, key, signature) => {
+  const computedSignature = signWithMAC(message, key);
+  return computedSignature === signature;
+};
+
 export default signWithMAC;
