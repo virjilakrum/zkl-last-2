@@ -50,6 +50,22 @@ function AppContent() {
     setProgram(program);
   }, [wallet]);
 
+  useEffect(() => {
+    if (wallet.connected && wallet.publicKey) {
+      const message = "Please sign this message to confirm your identity";
+      const encodedMessage = new TextEncoder().encode(message);
+      wallet.signMessage(encodedMessage).then(
+        (signature) => {
+          console.log("Signature:", signature);
+          // Burada imzayı doğrulama veya kaydetme işlemleri yapılabilir
+        },
+        (error) => {
+          console.error("Error signing message:", error);
+        }
+      );
+    }
+  }, [wallet.connected, wallet.publicKey]);
+
   const handleFileChange = async (event) => {
     const selectedFile = event.target.files[0];
     if (selectedFile) {
@@ -60,13 +76,6 @@ function AppContent() {
         const hash = added.path;
         setFileHash(hash);
         console.log("File uploaded to IPFS with hash:", hash);
-
-        if (wallet.publicKey) {
-          const key = wallet.publicKey.toBase58();
-          const signed = signWithMAC(hash, key);
-          setSignedHash(signed);
-          console.log("Signed hash:", signed);
-        }
       } catch (error) {
         console.error("Error uploading file to IPFS:", error);
         alert(
@@ -99,10 +108,29 @@ function AppContent() {
     }
   };
 
+  const handleMACSign = async () => {
+    if (!fileHash || !wallet.publicKey) {
+      alert("Please upload a file and connect your wallet first.");
+      return;
+    }
+    try {
+      const signedHash = await program.methods
+        .signFileHash(fileHash)
+        .accounts({
+          signer: wallet.publicKey,
+        })
+        .rpc();
+      setSignedHash(signedHash);
+      console.log("Signed hash:", signedHash);
+    } catch (error) {
+      console.error("Error signing file hash:", error);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!fileHash || !signedHash || !recipient || !wallet.publicKey) {
       alert(
-        "Please connect your wallet, upload a file, and enter a recipient."
+        "Please connect your wallet, upload a file, sign the hash, and enter a recipient."
       );
       return;
     }
@@ -144,6 +172,9 @@ function AppContent() {
             disabled={isUploading}
           />
           {isUploading && <p>Uploading file to IPFS...</p>}
+          <button onClick={handleMACSign} disabled={!fileHash}>
+            Sign File Hash with MAC
+          </button>
           <input
             type="text"
             placeholder="Recipient's public key"
@@ -172,7 +203,11 @@ export default function App() {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
+      <WalletProvider
+        wallets={wallets}
+        autoConnect
+        onError={(error) => console.log(error)}
+      >
         <WalletModalProvider>
           <AppContent />
         </WalletModalProvider>
