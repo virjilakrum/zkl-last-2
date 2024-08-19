@@ -42,13 +42,14 @@ pub mod zkl_last_2 {
         encrypted_hash: String,
     ) -> Result<String> {
         let recipient = &mut ctx.accounts.recipient;
+        let recipient_key = recipient.key();
 
         if let Some(file_info) = recipient
             .received_files
             .iter_mut()
             .find(|f| f.encrypted_hash == encrypted_hash)
         {
-            let key = ctx.accounts.recipient.key().to_bytes();
+            let key = recipient_key.to_bytes();
             let decrypted_hash = decrypt_hash(&encrypted_hash, &key);
             file_info.is_verified = true;
             Ok(decrypted_hash)
@@ -116,6 +117,6 @@ fn encrypt_hash_internal(hash: &str, key: &[u8]) -> String {
     hex::encode(result.into_bytes())
 }
 
-fn decrypt_hash(encrypted_hash: &str, key: &[u8]) -> String {
+fn decrypt_hash(encrypted_hash: &str, _key: &[u8]) -> String {
     encrypted_hash.to_string()
 }
