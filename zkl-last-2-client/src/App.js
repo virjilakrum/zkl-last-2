@@ -11,28 +11,21 @@ import {
   WalletModalProvider,
   WalletMultiButton,
 } from "@solana/wallet-adapter-react-ui";
-import {
-  clusterApiUrl,
-  PublicKey,
-  SystemProgram,
-  LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
+import { clusterApiUrl, PublicKey, SystemProgram } from "@solana/web3.js";
 import { Program, AnchorProvider } from "@project-serum/anchor";
 import { create } from "ipfs-http-client";
 import idl from "./idl.json";
 
 require("@solana/wallet-adapter-react-ui/styles.css");
 
-// IPFS client setup
 const ipfs = create({ host: "localhost", port: "5001", protocol: "http" });
-
-// Solana program ID
 const programID = new PublicKey("DAPVX77x4nA6AoqZpMLeYzfaYZCrBkDyoQuatmn6yn1c");
 
 function AppContent() {
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
 
+  const [userType, setUserType] = useState(null); // "sender" or "receiver"
   const [file, setFile] = useState(null);
   const [recipient, setRecipient] = useState("");
   const [fileHash, setFileHash] = useState("");
@@ -40,6 +33,7 @@ function AppContent() {
   const [program, setProgram] = useState();
   const [isUploading, setIsUploading] = useState(false);
   const [userAccount, setUserAccount] = useState(null);
+  const [receivedEncryptedHash, setReceivedEncryptedHash] = useState("");
 
   useEffect(() => {
     if (wallet) {
@@ -107,12 +101,20 @@ function AppContent() {
       return;
     }
     try {
-      const encryptedHash = await program.methods
+      const tx = await program.methods
         .encryptHash(fileHash)
         .accounts({
           sender: wallet.publicKey,
         })
         .rpc();
+
+      // Fetch the transaction details to get the return value
+      const txDetails = await connection.getTransaction(tx, {
+        commitment: "confirmed",
+      });
+      const returnData = txDetails.meta.returnData;
+      const encryptedHash = returnData.data.toString();
+
       setEncryptedHash(encryptedHash);
       console.log("Encrypted hash:", encryptedHash);
     } catch (error) {
@@ -153,22 +155,57 @@ function AppContent() {
     }
   };
 
-  const verifyAndDecryptHash = async () => {
-    if (!program || !wallet.publicKey || !encryptedHash || !userAccount) {
-      alert(
-        "Please receive an encrypted hash and create a user account first."
-      );
+  const fetchReceivedHash = async () => {
+    if (!program || !wallet.publicKey || !userAccount) {
+      alert("Please create a user account first.");
       return;
     }
     try {
-      const decryptedHash = await program.methods
-        .verifyAndDecryptHash(encryptedHash)
+      const userAccountInfo = await program.account.userAccount.fetch(
+        userAccount
+      );
+      if (userAccountInfo.receivedFiles.length > 0) {
+        const latestFile =
+          userAccountInfo.receivedFiles[
+            userAccountInfo.receivedFiles.length - 1
+          ];
+        setReceivedEncryptedHash(latestFile.encryptedHash);
+      } else {
+        alert("No received files found.");
+      }
+    } catch (error) {
+      console.error("Error fetching received hash:", error);
+    }
+  };
+
+  const verifyAndDecryptHash = async () => {
+    if (
+      !program ||
+      !wallet.publicKey ||
+      !receivedEncryptedHash ||
+      !userAccount
+    ) {
+      alert("Please fetch the received encrypted hash first.");
+      return;
+    }
+    try {
+      const tx = await program.methods
+        .verifyAndDecryptHash(receivedEncryptedHash)
         .accounts({
           recipient: userAccount,
         })
         .rpc();
+
+      // Fetch the transaction details to get the return value
+      const txDetails = await connection.getTransaction(tx, {
+        commitment: "confirmed",
+      });
+      const returnData = txDetails.meta.returnData;
+      const decryptedHash = returnData.data.toString();
+
       console.log("Decrypted hash:", decryptedHash);
-      // Here you would use this hash to fetch the file from IPFS
+      // Here you can add logic to fetch the file from IPFS using the decrypted hash
+      alert(`File can be fetched from IPFS with hash: ${decryptedHash}`);
     } catch (error) {
       console.error("Error verifying and decrypting hash:", error);
     }
@@ -178,40 +215,65 @@ function AppContent() {
     <div>
       <h1>ZKL-Last-2</h1>
       <WalletMultiButton />
-      {wallet && wallet.publicKey && (
+      {wallet && wallet.publicKey && !userType && (
+        <div>
+          <h2>Select User Type:</h2>
+          <button onClick={() => setUserType("sender")}>File Sender</button>
+          <button onClick={() => setUserType("receiver")}>File Receiver</button>
+        </div>
+      )}
+      {wallet && wallet.publicKey && userType && (
         <>
+          <h2>You are a: {userType}</h2>
           <button onClick={createUserAccount} disabled={userAccount}>
             {userAccount ? "User Account Created" : "Create User Account"}
           </button>
-          <input
-            type="file"
-            onChange={handleFileChange}
-            disabled={isUploading}
-          />
-          {isUploading && <p>Uploading file to IPFS...</p>}
-          {fileHash && <p>File hash: {fileHash}</p>}
-          <button onClick={encryptHash} disabled={!fileHash || !userAccount}>
-            Encrypt Hash
-          </button>
-          {encryptedHash && <p>Encrypted hash: {encryptedHash}</p>}
-          <input
-            type="text"
-            placeholder="Recipient's public key"
-            value={recipient}
-            onChange={handleRecipientChange}
-          />
-          <button
-            onClick={sendEncryptedHash}
-            disabled={!encryptedHash || !recipient || !userAccount}
-          >
-            Send Encrypted Hash
-          </button>
-          <button
-            onClick={verifyAndDecryptHash}
-            disabled={!encryptedHash || !userAccount}
-          >
-            Verify and Decrypt Hash
-          </button>
+          {userType === "sender" && (
+            <>
+              <input
+                type="file"
+                onChange={handleFileChange}
+                disabled={isUploading}
+              />
+              {isUploading && <p>Uploading file to IPFS...</p>}
+              {fileHash && <p>File hash: {fileHash}</p>}
+              <button
+                onClick={encryptHash}
+                disabled={!fileHash || !userAccount}
+              >
+                Encrypt Hash
+              </button>
+              {encryptedHash && <p>Encrypted hash: {encryptedHash}</p>}
+              <input
+                type="text"
+                placeholder="Recipient's public key"
+                value={recipient}
+                onChange={handleRecipientChange}
+              />
+              <button
+                onClick={sendEncryptedHash}
+                disabled={!encryptedHash || !recipient || !userAccount}
+              >
+                Send Encrypted Hash
+              </button>
+            </>
+          )}
+          {userType === "receiver" && (
+            <>
+              <button onClick={fetchReceivedHash} disabled={!userAccount}>
+                Fetch Received Hash
+              </button>
+              {receivedEncryptedHash && (
+                <p>Received encrypted hash: {receivedEncryptedHash}</p>
+              )}
+              <button
+                onClick={verifyAndDecryptHash}
+                disabled={!receivedEncryptedHash || !userAccount}
+              >
+                Verify and Decrypt Hash
+              </button>
+            </>
+          )}
         </>
       )}
     </div>
